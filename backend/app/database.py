@@ -19,6 +19,9 @@ client = MongoClient(
 
 database = client[DATABASE_NAME]
 
+resumes_collection = database['resumes']
+
+
 
 def check_database_connection():
     client.admin.command("ping")

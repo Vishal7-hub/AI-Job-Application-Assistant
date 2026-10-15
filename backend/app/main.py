@@ -1,7 +1,13 @@
+from bson import ObjectId
+from bson.errors import InvalidId
 
 from fastapi import FastAPI , UploadFile , File , HTTPException
 
 from app.resume_parser import extract_text_from_pdf
+
+from app.database import resumes_collection
+from datetime import datetime, timezone
+
 
 
 app = FastAPI(
@@ -48,9 +54,73 @@ async def upload_resume(file : UploadFile = File(...)):
             detail="could not read this PDF. Please upload a valid pdf file"
         )
 
+    resume_document = {
+    "filename": file.filename,
+    "extracted_text": extracted_text,
+    "characters_extracted": len(extracted_text),
+    "uploaded_at": datetime.now(timezone.utc),
+}
+
+    result = resumes_collection.insert_one(resume_document)  
+
+    
+
     return {
-        "filename":file.filename,
-        "characters_extracted":len(extracted_text),
-        "extracted_text":extracted_text,
+    "message": "Resume uploaded and saved successfully",
+    "resume_id": str(result.inserted_id),
+    "filename": file.filename,
+    "characters_extracted": len(extracted_text),
+    "extracted_text": extracted_text,
+}
+
+@app.get("/resume/{resume_id}")
+def get_resume(resume_id:str):
+    try:
+        object_id = ObjectId(resume_id)
+    except InvalidId:
+        raise HTTPException(status_code=400,detail="Invalid Resume ID")
+
+    resume = resumes_collection.find_one(
+        {"_id":object_id}
+
+    )
+
+    if resume is None:
+        raise HTTPException(status_code=400,detail="Resume not found")
+
+    return {
+        "resume_id" : str(resume["_id"]),
+        "filename":resume["filename"],
+        "characters_extracted": resume["characters_extracted"],
+        "uploaded_at": resume["uploaded_at"].isoformat(),
+        "extracted_text": resume["extracted_text"]
+
+
     }
+
+
+@app.get("/resumes") 
+def get_all_resumes():
+    resumes = resumes_collection.find(
+        {},  # bring all documents from the database
+        {
+            "filename": 1,
+            "characters_extracted": 1,
+            "uploaded_at": 1
+        }
+    ).sort("uploaded_at", -1)
+
+    return [
+        {
+            "resume_id": str(resume["_id"]),
+            "filename": resume["filename"],
+            "characters_extracted": resume["characters_extracted"],
+            "uploaded_at": resume["uploaded_at"].isoformat()
+        }
+        for resume in resumes
+    ]
+
+
+    
+
 
